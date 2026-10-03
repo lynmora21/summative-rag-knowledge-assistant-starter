@@ -10,10 +10,9 @@ def answer_question(question: str) -> dict[str, Any]:
     """
     Run the RAG workflow for a user question.
 
-    This function should:
     1. Retrieve relevant chunks.
     2. Build a prompt from the question and retrieved context.
-    3. Send the prompt to the model service.
+    3. Send the prompt to the generation model.
     4. Return the generated answer and supporting sources.
     """
     chunks = retrieve_relevant_chunks(question, top_k=Config.TOP_K)
@@ -25,6 +24,10 @@ def answer_question(question: str) -> dict[str, Any]:
                 "knowledge base to answer that question."
             ),
             "sources": [],
+            "metadata": {
+                "model": Config.GENERATION_MODEL,
+                "retrieved_chunks": 0,
+            },
         }
 
     prompt = build_prompt(question, chunks)
@@ -33,14 +36,17 @@ def answer_question(question: str) -> dict[str, Any]:
     return {
         "answer": answer,
         "sources": format_sources(chunks),
+        "metadata": {
+            "model": Config.GENERATION_MODEL,
+            "retrieved_chunks": len(chunks),
+        },
     }
 
 
 def build_prompt(question: str, chunks: list[dict[str, Any]]) -> str:
     """
-    Build a prompt that asks the model to answer using only retrieved context.
-
-    This helper is provided. You may refine it if needed.
+    Build a prompt that instructs the model to answer using only
+    information from the retrieved knowledge-base context.
     """
     context_blocks = []
 
@@ -58,11 +64,16 @@ def build_prompt(question: str, chunks: list[dict[str, Any]]) -> str:
     return f"""
 You are a helpful internal knowledge assistant.
 
-Use only the provided context to answer the user's question.
-If the context does not contain enough information, say that you do not have enough information from the knowledge base.
+Use ONLY the provided context to answer the user's question.
 
-Keep the answer clear and practical.
-Do not invent policies, steps, or facts that are not supported by the context.
+If the provided context does not contain enough information to answer
+the question, say:
+"I do not have enough information in the provided knowledge base to answer that question."
+
+Do not invent policies, procedures, facts, or recommendations that are
+not supported by the provided context.
+
+Keep the answer clear, concise, and practical.
 
 Context:
 {context}
@@ -76,50 +87,63 @@ Answer:
 
 def call_generation_model(prompt: str) -> str:
     """
-    Send the final prompt to the configured generation model.
+    Send the final prompt to the configured Ollama generation model.
+    """
+    url = f"{Config.OLLAMA_BASE_URL.rstrip('/')}/api/generate"
 
-    TODO:
-    - Send a POST request to the Ollama generation endpoint.
-    - Use Config.OLLAMA_BASE_URL.
-    - Use Config.GENERATION_MODEL.
-    - Use Config.TEMPERATURE.
-    - Request a non-streaming response.
-    - Return the generated response text.
-
-    Endpoint:
-        POST {OLLAMA_BASE_URL}/api/generate
-
-    Example request body:
-        {
+    response = requests.post(
+        url,
+        json={
             "model": Config.GENERATION_MODEL,
             "prompt": prompt,
             "stream": False,
             "options": {
-                "temperature": Config.TEMPERATURE
-            }
-        }
-    """
-    raise NotImplementedError("TODO: Call the configured generation model.")
+                "temperature": Config.TEMPERATURE,
+            },
+        },
+        timeout=120,
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    answer = data.get("response", "").strip()
+
+    if not answer:
+        raise ValueError("Generation model returned an empty response.")
+
+    return answer
 
 
 def format_sources(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Format retrieved chunks for the frontend.
 
-    This helper is provided. You may adjust the excerpt length if needed.
+    Each source includes:
+    - document title
+    - excerpt/content
+    - source filename
+    - knowledge-base path
+    - chunk index
     """
     sources = []
 
     for chunk in chunks:
         text = chunk.get("text", "")
+        source = chunk.get("source", "unknown")
+
         excerpt = text[:280] + "..." if len(text) > 280 else text
 
         sources.append(
             {
                 "title": chunk.get("title", "Unknown Source"),
-                "source": chunk.get("source", "unknown"),
-                "chunk_index": chunk.get("chunk_index"),
-                "excerpt": excerpt,
+                "content": excerpt,
+                "metadata": {
+                    "path": f"{Config.KNOWLEDGE_BASE_PATH}/{source}",
+                    "source": source,
+                    "chunk_index": chunk.get("chunk_index"),
+                },
             }
         )
 

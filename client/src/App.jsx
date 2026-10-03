@@ -4,7 +4,7 @@ const SAMPLE_QUESTIONS = [
   "What should I do if I cannot log into the product dashboard?",
   "Why are source-backed answers important?",
   "What should employees do with suspicious emails?",
-  "What should a support agent do if the knowledge base does not answer a question?"
+  "What should a support agent do if the knowledge base does not answer a question?",
 ];
 
 export default function App() {
@@ -53,21 +53,26 @@ export default function App() {
       const response = await fetch("/api/ask", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify({ question: trimmedQuestion })
+        body: JSON.stringify({
+          question: trimmedQuestion,
+        }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
         setError(data.error || "The backend returned an error.");
+        return;
       }
 
       setAnswer(data.answer || "");
       setSources(Array.isArray(data.sources) ? data.sources : []);
     } catch {
-      setError("Could not reach the backend. Confirm Flask is running on port 5555.");
+      setError(
+        "Could not reach the backend. Confirm Flask is running on port 5555."
+      );
     } finally {
       setIsLoading(false);
     }
@@ -76,17 +81,22 @@ export default function App() {
   function useSampleQuestion(sample) {
     setQuestion(sample);
     setError("");
+    setAnswer("");
+    setSources([]);
   }
 
   return (
     <main className="page-shell">
       <section className="hero">
-        <p className="eyebrow">Summative Lab Starter</p>
+        <p className="eyebrow">Summative Lab</p>
+
         <h1>Local RAG-Powered Knowledge Assistant</h1>
+
         <p>
-          Complete the Flask backend and RAG workflow so this interface can return
-          source-backed answers from the provided knowledge base.
+          Ask questions about the approved knowledge base and receive
+          source-backed answers retrieved from the provided documents.
         </p>
+
         <div className="status-card">
           <span className="status-dot" />
           <span>{status}</span>
@@ -95,7 +105,10 @@ export default function App() {
 
       <section className="assistant-card">
         <form onSubmit={handleSubmit}>
-          <label htmlFor="question">Ask a question about the knowledge base</label>
+          <label htmlFor="question">
+            Ask a question about the knowledge base
+          </label>
+
           <textarea
             id="question"
             value={question}
@@ -103,6 +116,7 @@ export default function App() {
             placeholder="Example: Why are source-backed answers important?"
             rows={4}
           />
+
           <button type="submit" disabled={isLoading}>
             {isLoading ? "Working..." : "Ask Assistant"}
           </button>
@@ -110,6 +124,7 @@ export default function App() {
 
         <div className="sample-section">
           <p>Sample questions:</p>
+
           <div className="sample-list">
             {SAMPLE_QUESTIONS.map((sample) => (
               <button
@@ -136,12 +151,30 @@ export default function App() {
         {sources.length > 0 && (
           <section className="sources-section">
             <h2>Sources</h2>
+
             <div className="source-list">
               {sources.map((source, index) => (
-                <article className="source-card" key={`${source.source}-${index}`}>
+                <article
+                  className="source-card"
+                  key={`${source.source || "source"}-${index}`}
+                >
                   <h3>{source.title || "Unknown Source"}</h3>
-                  <p className="source-file">{source.source}</p>
-                  <p>{source.excerpt}</p>
+
+                  {source.source && (
+                    <p className="source-file">{source.source}</p>
+                  )}
+
+                  <p>
+                    {source.excerpt ||
+                      source.content ||
+                      "No source excerpt available."}
+                  </p>
+
+                  {source.metadata?.path && (
+                    <p className="source-path">
+                      Path: {source.metadata.path}
+                    </p>
+                  )}
                 </article>
               ))}
             </div>
